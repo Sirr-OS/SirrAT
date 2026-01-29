@@ -1,0 +1,32 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # Main executable
+        chmod 0755 /usr/bin/sirrat
+
+        # Desktop entry
+        chmod 0644 /usr/share/applications/sirrat.desktop
+
+        # Icon
+        chmod 0644 /usr/share/icons/hicolor/256x256/apps/sirrat.png
+        chmod 0644 /usr/share/icons/hicolor/500x500/apps/sirrat.png
+        chmod 0644 /usr/share/icons/hicolor/scalable/apps/sirrat.svg
+
+        # Polkit policy
+        chmod 0644 /usr/share/polkit-1/actions/org.sirros.at-change.policy
+
+        # Update icon cache if available
+        if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+            gtk-update-icon-cache -f -t /usr/share/icons/hicolor || true
+        fi
+
+        # Reload polkit rules if possible
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl reload polkit.service >/dev/null 2>&1 || true
+        fi
+    ;;
+esac
+
+exit 0

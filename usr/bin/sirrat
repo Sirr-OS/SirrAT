@@ -1,0 +1,212 @@
+#!/bin/bash
+set -euo pipefail
+
+# ===============================
+# SirrAT
+# Simple AT-based modem manager
+# Author: @Commander.Z3R0
+# ===============================
+
+# Colors
+BOLD="\e[1m"
+RESET="\e[0m"
+RED="\e[31m"
+DIM="\e[2m"
+
+# Banner
+logo="$BOLD
+                          _cyqyc_
+                      :>3qKKKKKKKq3>:
+                  ';CpKKKKKKkKKKKKKKKpC;'
+              -\"iPKKKKKKkkkCZ3R0KKKKKKKKKKPi\"-
+          \`~v]KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK]v~\`
+       ,rwKKKKKKKKKKKKKPv;,:'-':,;vPKKKKKKKKKKKKKwr,
+      !KKKKKKKKKKKKKKK/             !KKKKKKKKKKKKKKK!
+      !KKKKKKKKKKKKKKf       ?       CKKKKKKKKKKKKKK!
+      !KKKKKKKKKKKKKp-               -qKKKKKKKKKKKKK!
+      !KKKKKKKKKKKKK>\"               \"\\KKKKKKKKKKKKK!
+      !KKKKKKKKw;,_'-                   .-:,\"wKKKKKKK!
+      !KKKKKKKKhi*;\"                   \";*ihKKKKKKKK!
+      !KKKKKKKKKKKKK;                 ;KKKKKKKKKKKKK!
+      !KKKKKKKKKKKKK2>'             '>2KKKKKKKKKKKKK!
+      !KKKKKKKKKKKKKKKZ             ZKKKKKKKKKKKKKKK!
+      !KKKKKKKKKKKKKKK5             eKKKKKKKKKKKKKKK!
+      !KKKKKKKKKKKqC;-               -;CqKKKKKKKKKKK!
+      <KKKKKKKKkr,                       ,rSKKKKKKKK<
+       -\"v]qj;-                             -;jq]v\"-
+			${RESET}[ SirrAT ]${RESET}
+      ${DIM}Simple script to manage modems using AT commands
+                 ${DIM}Author: ${RESET}${RED}@Commander.Z3R0${RESET}"
+echo -e "$logo"
+
+# ===============================
+# Privilege check
+# ===============================
+if [[ "$EUID" -ne 0 ]]; then
+    echo "[!] This script must be run as root."
+    exit 1
+fi
+
+# ===============================
+# Dependency check
+# ===============================
+if ! command -v atinout &>/dev/null; then
+    echo "[!] Dependency missing: atinout"
+    echo "[?] Please install it before running this tool."
+    exit 1
+fi
+
+# ===============================
+# Detect USB modem ports
+# ===============================
+echo "[*] Detecting available USB modem ports..."
+mapfile -t DEVICES < <(dmesg | grep -oP "ttyUSB[0-9]+" | sort -u)
+
+if [[ ${#DEVICES[@]} -eq 0 ]]; then
+    echo "[!] No ttyUSB ports detected."
+    echo "[?] Check modem connection."
+    exit 1
+fi
+
+echo "[*] Detected ports:"
+for i in "${!DEVICES[@]}"; do
+    echo "    [$i] /dev/${DEVICES[$i]}"
+done
+
+read -rp "[?] Select port number: " SELECTION
+PORT="/dev/${DEVICES[$SELECTION]}"
+
+if [[ ! -e "$PORT" ]]; then
+    echo "[!] Selected port does not exist: $PORT"
+    exit 1
+fi
+
+readonly PORT
+echo "[*] Using port: $PORT"
+
+# ===============================
+# Functions
+# ===============================
+
+send_at() {
+    local CMD="$1"
+    echo
+    echo "[*] Sending AT command: $CMD"
+    echo "$CMD" | atinout - "$PORT" -
+}
+
+signal_graph_once() {
+    local SIGNAL_RAW
+    SIGNAL_RAW=$(echo "AT+CSQ" | atinout - "$PORT" - | grep "+CSQ" | cut -d':' -f2 | cut -d',' -f1 | tr -d ' ')
+
+    if [[ "$SIGNAL_RAW" =~ ^[0-9]+$ ]]; then
+        local PERCENT=$((SIGNAL_RAW * 100 / 31))
+        local FILLED EMPTY
+        FILLED=$(printf "%0.s█" $(seq 1 $((PERCENT / 5))))
+        EMPTY=$(printf "%0.s░" $(seq 1 $(((100 - PERCENT) / 5))))
+        echo "[*] +CSQ: $SIGNAL_RAW | [$FILLED$EMPTY] $PERCENT%"
+    else
+        echo "[!] Signal unavailable or invalid response."
+    fi
+}
+
+signal_monitor() {
+    clear
+    echo "[*] Real-time signal monitor (CSQ)"
+    echo "[*] Port: $PORT"
+    echo "[*] Press Ctrl+C to exit"
+    sleep 1
+
+    while true; do
+        local SIGNAL_RAW
+        SIGNAL_RAW=$(echo "AT+CSQ" | atinout - "$PORT" - 2>/dev/null | grep "+CSQ" | cut -d':' -f2 | cut -d',' -f1 | tr -d ' ')
+
+        if [[ "$SIGNAL_RAW" =~ ^[0-9]+$ ]]; then
+            local PERCENT=$((SIGNAL_RAW * 100 / 31))
+            local FILLED EMPTY
+            FILLED=$(printf "%0.s█" $(seq 1 $((PERCENT / 5))))
+            EMPTY=$(printf "%0.s░" $(seq 1 $(((100 - PERCENT) / 5))))
+            printf "\r[*] +CSQ: %-2s | [%-20s] %3d%%" "$SIGNAL_RAW" "$FILLED$EMPTY" "$PERCENT"
+        else
+            printf "\r[!] Error reading signal..."
+        fi
+        sleep 1
+    done
+}
+
+change_imei() {
+    read -rp "[?] Enter new IMEI (15 digits): " NEW_IMEI
+    if [[ "$NEW_IMEI" =~ ^[0-9]{15}$ ]]; then
+        echo "[*] Writing new IMEI..."
+        echo "AT+EGMR=1,7,\"$NEW_IMEI\"" | atinout - "$PORT" -
+        echo "[*] IMEI successfully changed."
+    else
+        echo "[!] Invalid IMEI format."
+    fi
+}
+
+reboot_modem() {
+    echo "[*] Rebooting modem..."
+    echo "AT+CFUN=0" | atinout - "$PORT" -
+    echo "AT+CFUN=1" | atinout - "$PORT" -
+    echo "[*] Modem reboot sequence sent."
+}
+
+show_bts_antennas() {
+    echo "[*] Querying BTS antennas..."
+    echo "AT+COPS=3,2" | atinout - "$PORT" -
+    sleep 2
+
+    local RESPONSE
+    RESPONSE=$(echo "AT+COPS?" | atinout - "$PORT" -)
+
+    if [[ "$RESPONSE" == *"+COPS:"* ]]; then
+        echo "[*] BTS information:"
+        echo "$RESPONSE" | while read -r line; do
+            if [[ "$line" == +COPS:* ]]; then
+                local MODE FORMAT OPERATOR STATUS
+                MODE=$(echo "$line" | cut -d',' -f1 | cut -d':' -f2)
+                FORMAT=$(echo "$line" | cut -d',' -f2)
+                OPERATOR=$(echo "$line" | cut -d',' -f3 | tr -d '"')
+                STATUS=$(echo "$line" | cut -d',' -f4)
+
+                echo "    Mode     : $MODE"
+                echo "    Format   : $FORMAT"
+                echo "    Operator : $OPERATOR"
+                echo "    Status   : $STATUS"
+                echo "    Info     : https://mcc-mnc.com/"
+            fi
+        done
+    else
+        echo "[!] Failed to retrieve BTS information."
+    fi
+}
+
+# ===============================
+# Main menu
+# ===============================
+while true; do
+    echo
+    echo "[*] Options menu"
+    echo "    1) Show IMEI (AT+GSN)"
+    echo "    2) Show IMSI (AT+CIMI)"
+    echo "    3) Show signal strength (AT+CSQ)"
+    echo "    4) Real-time signal monitor"
+    echo "    5) Show BTS antennas"
+    echo "    6) Change IMEI (advanced)"
+    echo "    7) Reboot modem"
+    echo "    8) Exit"
+    read -rp "[?] Select option: " OPTION
+
+    case "$OPTION" in
+        1) send_at "AT+GSN" ;;
+        2) send_at "AT+CIMI" ;;
+        3) signal_graph_once ;;
+        4) signal_monitor ;;
+        5) show_bts_antennas ;;
+        6) change_imei ;;
+        7) reboot_modem ;;
+        8) echo "[*] Exiting."; exit 0 ;;
+        *) echo "[!] Invalid option." ;;
+    esac
+done

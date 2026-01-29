@@ -1,0 +1,10 @@
+Package: sirrat
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: arm64
+Depends: atinout, polkitd, pkexec
+Maintainer: Commander-Z3R0 <commander.Z3R0@proton.me>
+Description: SirrAT modem management tool
+ A lightweight, terminal-based modem management tool
+ designed for SirrOS.

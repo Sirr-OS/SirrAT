@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=SirrAT
+Comment=Setting AT module
+Exec=pkexec /usr/bin/sirrat
+Icon=sirrat
+Terminal=true
+Type=Application
+Categories=System;Security;
+StartupNotify=true
