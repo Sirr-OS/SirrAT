@@ -27,9 +27,10 @@ jobs:
           chmod 0755 usr/bin/sirrat
           chmod 0755 DEBIAN/postinst
 
-      - name: Remove README from package tree
+      - name: Remove README and .git from package tree
         run: |
           rm -f README.md
+          rm -rf .git
 
       - name: Build .deb package
         run: |
