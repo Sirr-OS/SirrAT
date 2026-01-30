@@ -15,7 +15,7 @@ case "$1" in
         chmod 0644 /usr/share/icons/hicolor/scalable/apps/sirrat.svg
 
         # Polkit policy
-        chmod 0644 /usr/share/polkit-1/actions/org.sirros.at-change.policy
+        chmod 0644 /usr/share/polkit-1/actions/org.sirros.sirrat.policy
 
         # Update icon cache if available
         if command -v gtk-update-icon-cache >/dev/null 2>&1; then
